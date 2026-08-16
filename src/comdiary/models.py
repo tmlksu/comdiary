@@ -180,6 +180,8 @@ class Meeting(Base):
     kind: Literal["meeting", "chat", "mail", "note"] = "meeting"
     date: datetime
     date_source: DateSource = "unknown"
+    #: None means only a date was known and `date`'s time is a 00:00 placeholder.
+    time_source: DateSource | None = None
     attendees: list[str] = Field(default_factory=list)
     summary: str = ""
     source_path: str = ""

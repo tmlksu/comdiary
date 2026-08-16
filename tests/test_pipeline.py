@@ -176,10 +176,14 @@ class TestDateGuess:
         assert (dt.year, dt.month, dt.day, dt.hour, dt.minute) == (2026, 8, 13, 12, 0)
         assert got.source == "filename"
 
-    def test_filename_date_only(self):
+    def test_filename_date_only_leaves_the_time_unknown(self):
+        """A yyyy-mm-dd filename says nothing about the clock; 00:00 is a
+        placeholder and must be reported as one."""
         got = guess_datetime(self._doc("2026-08-13_昼会.md"))
         assert (got.when.year, got.when.month, got.when.day) == (2026, 8, 13)
         assert got.source == "filename"
+        assert got.time_source is None
+        assert not got.has_time
 
     def test_compact_filename(self):
         got = guess_datetime(self._doc("20260813T0930_meet.md"))
@@ -196,6 +200,7 @@ class TestDateGuess:
         got = guess_datetime(self._doc("2026-08-13-1200-x.md", "日時: 2020年1月1日 09:00"))
         assert (got.when.year, got.when.month) == (2026, 8)
         assert got.source == "filename"
+        assert got.time_source == "filename"
 
     def test_llm_date_used_when_nothing_else_has_one(self):
         got = guess_datetime(self._doc("memo.md", "日付なし"), llm_date="2026-08-13T14:30:00")
@@ -248,3 +253,69 @@ def test_date_in_a_long_header_block_is_still_found():
     got = guess_datetime(doc)
     assert (got.when.month, got.when.day, got.when.hour) == (8, 13, 14)
     assert got.source == "body"
+
+
+class TestDateOnlyFilename:
+    """A yyyy-mm-dd filename fixes the date but not the ordering within a day.
+    The time has to come from somewhere else, or be admitted as unknown."""
+
+    def _doc(self, name: str, text: str = "", mtime: float = 0.0) -> SourceDoc:
+        return SourceDoc(path=Path(name), name=name, text=text, sha256="x", mtime=mtime)
+
+    def test_time_is_borrowed_from_a_matching_body_date(self):
+        got = guess_datetime(
+            self._doc("2026-08-13-定例.md", "日時: 2026年8月13日 14:30\n田中: 始めます。")
+        )
+        assert got.source == "filename"
+        assert got.time_source == "body"
+        assert (got.when.month, got.when.day, got.when.hour, got.when.minute) == (8, 13, 14, 30)
+
+    def test_labelled_time_without_a_date_is_used(self):
+        got = guess_datetime(self._doc("2026-08-13-定例.md", "開始時刻: 16:05\n田中: どうも。"))
+        assert got.source == "filename"
+        assert got.time_source == "body"
+        assert (got.when.hour, got.when.minute) == (16, 5)
+
+    def test_a_different_days_time_is_not_borrowed(self):
+        """Bodies are full of other dates — deadlines, the next meeting. None of
+        them are this meeting's start time."""
+        got = guess_datetime(
+            self._doc("2026-08-13-定例.md", "次回は 2026年8月20日 10:00 です。")
+        )
+        assert got.time_source is None
+        assert (got.when.month, got.when.day, got.when.hour) == (8, 13, 0)
+
+    def test_utterance_timestamps_are_not_mistaken_for_a_start_time(self):
+        """Per-utterance timestamps start near 00:00 and would date the meeting
+        to the middle of the night."""
+        body = "00:00:04 田中: おはようございます。\n00:03:12 鈴木: はい。\n"
+        got = guess_datetime(self._doc("2026-08-13-朝会.md", body))
+        assert got.time_source is None
+        assert got.when.hour == 0
+
+    def test_llm_time_is_used_when_the_body_has_none(self):
+        got = guess_datetime(
+            self._doc("2026-08-13-定例.md", "田中: 始めます。"),
+            llm_date="2026-08-13T09:30:00",
+        )
+        assert got.source == "filename"
+        assert got.time_source == "llm"
+        assert (got.when.hour, got.when.minute) == (9, 30)
+
+    def test_nonsense_clock_values_are_rejected(self):
+        got = guess_datetime(self._doc("2026-08-13-定例.md", "日時: 99:99 開始"))
+        assert got.time_source is None
+
+
+def test_undated_time_is_marked_unknown_in_the_meeting_record(config: Config):
+    write_memo(config, "2026-08-13-昼会.md", SAMPLE_LUNCH)
+    report = run(config)
+    meeting = report.outcomes[0].meeting
+    assert meeting.date_source == "filename"
+    assert meeting.time_source is None
+
+    paths = LedgerPaths(config.ledger)
+    md = next(paths.meetings.rglob("*.md")).read_text(encoding="utf-8")
+    assert "time_source: unknown" in md
+    assert "(時刻不明)" in md
+    assert "2026-08-13 00:00" not in md

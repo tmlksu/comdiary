@@ -51,51 +51,115 @@ _DATE_PATTERNS = (
     re.compile(r"(20\d{2})(\d{2})(\d{2})"),
 )
 
+#: A time on its own, but only when it is clearly labelled as the meeting's.
+#: A bare ``\d{1,2}:\d{2}`` would happily match a per-utterance timestamp
+#: ("00:03:12 田中: ...") and silently date the meeting to 00:03.
+_LABELLED_TIME = re.compile(
+    r"(?:日時|時刻|開始|開始時刻|時間|date|time|when)[^\n]{0,20}?[:：][^\n]{0,20}?"
+    r"(?<!\d)(\d{1,2})\s*[:時]\s*(\d{2})(?!\d)",
+    re.IGNORECASE,
+)
+
 
 @dataclass
 class DatedAt:
     when: datetime
     source: str
+    #: Where the clock time came from. ``None`` means only a date was found and
+    #: ``when`` is midnight — a placeholder, not an observation.
+    time_source: str | None = None
+
+    @property
+    def has_time(self) -> bool:
+        return self.time_source is not None
+
+
+def _scan(text: str) -> tuple[datetime, bool] | None:
+    """First date in ``text``, and whether it carried a clock time."""
+    for pattern in _DATE_PATTERNS:
+        m = pattern.search(text)
+        if not m:
+            continue
+        parts = [int(g) for g in m.groups()]
+        try:
+            if len(parts) == 5:
+                return datetime(parts[0], parts[1], parts[2], parts[3], parts[4]), True
+            return datetime(parts[0], parts[1], parts[2]), False
+        except ValueError:
+            continue
+    return None
+
+
+def _labelled_time(text: str) -> tuple[int, int] | None:
+    for m in _LABELLED_TIME.finditer(text):
+        hour, minute = int(m.group(1)), int(m.group(2))
+        if 0 <= hour <= 23 and 0 <= minute <= 59:
+            return hour, minute
+    return None
 
 
 def guess_datetime(doc: SourceDoc, llm_date: str | None = None) -> DatedAt:
-    """Filename, then the document head, then the LLM, then the file's mtime.
+    """Resolve the meeting timestamp, taking the date and the time separately.
 
-    The cheap deterministic sources go first because transcripts usually carry
-    the date in the filename, and reading it there is exact.
+    Filenames commonly carry ``yyyy-mm-dd`` and no clock time. Trusting the
+    filename wholesale would then stamp every meeting that day at 00:00 and
+    destroy the ordering between them, so once a date is fixed we keep looking
+    for a time — in the body, then from the LLM — and adopt one only if it
+    belongs to the same calendar day.
 
     ``mtime`` is the last resort and is reported as such: when a transcript is
     published after the fact (a notification arrives, a job fetches and converts
     it), the file's write time is *not* the meeting time and can be off by
     hours or days. Callers surface that so it is never a silent error.
     """
-    candidates = (
-        (doc.name, "filename"),
-        (doc.text[:DATE_SCAN_CHARS], "body"),
-        (llm_date or "", "llm"),
-    )
-    for candidate, source in candidates:
-        for pattern in _DATE_PATTERNS:
-            m = pattern.search(candidate)
-            if not m:
-                continue
-            parts = [int(g) for g in m.groups()]
-            try:
-                if len(parts) == 5:
-                    when = datetime(parts[0], parts[1], parts[2], parts[3], parts[4])
-                else:
-                    when = datetime(parts[0], parts[1], parts[2])
-            except ValueError:
-                continue
-            return DatedAt(when.astimezone(), source)
-    if llm_date:
+    body = doc.text[:DATE_SCAN_CHARS]
+    candidates = ((doc.name, "filename"), (body, "body"), (llm_date or "", "llm"))
+    scanned = [(source, _scan(text)) for text, source in candidates]
+
+    chosen: DatedAt | None = None
+    for source, hit in scanned:
+        if hit is None:
+            continue
+        when, has_time = hit
+        chosen = DatedAt(when.astimezone(), source, source if has_time else None)
+        break
+
+    if chosen is None and llm_date:
         try:
-            return DatedAt(datetime.fromisoformat(llm_date.replace("Z", "+00:00")).astimezone(), "llm")
+            parsed = datetime.fromisoformat(llm_date.replace("Z", "+00:00")).astimezone()
         except ValueError:
-            pass
-    if doc.mtime:
-        return DatedAt(datetime.fromtimestamp(doc.mtime).astimezone(), "mtime")
-    return DatedAt(now(), "unknown")
+            parsed = None
+        if parsed:
+            chosen = DatedAt(parsed, "llm", "llm")
+
+    if chosen is None:
+        if doc.mtime:
+            stamp = datetime.fromtimestamp(doc.mtime).astimezone()
+            return DatedAt(stamp, "mtime", "mtime")
+        return DatedAt(now(), "unknown", None)
+
+    if chosen.has_time:
+        return chosen
+    return _borrow_time(chosen, scanned, body)
+
+
+def _borrow_time(chosen: DatedAt, scanned: list, body: str) -> DatedAt:
+    """Fill in a missing clock time from a source that agrees on the date.
+
+    The same-day check matters: a transcript body is full of other dates and
+    times (deadlines, next meetings), and none of them are this meeting's start.
+    """
+    for source, hit in scanned:
+        if hit is None:
+            continue
+        when, has_time = hit
+        if has_time and when.date() == chosen.when.date():
+            return DatedAt(chosen.when.replace(hour=when.hour, minute=when.minute), chosen.source, source)
+
+    found = _labelled_time(body)
+    if found:
+        return DatedAt(chosen.when.replace(hour=found[0], minute=found[1]), chosen.source, "body")
+    return chosen
 
 
 @dataclass
@@ -226,6 +290,7 @@ class Pipeline:
             kind=doc.kind,  # type: ignore[arg-type]
             date=when,
             date_source=dated.source,  # type: ignore[arg-type]
+            time_source=dated.time_source,  # type: ignore[arg-type]
             attendees=split.attendees,
             summary=split.summary,
             source_path=str(doc.path),

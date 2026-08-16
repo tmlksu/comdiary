@@ -354,7 +354,8 @@ def _print_outcome(outcome: IngestOutcome) -> None:
     console.print(
         f"       マイク: {meeting.speaker_stats.mic_mode} / "
         f"話者帰属: {meeting.speaker_stats.attribution} / "
-        f"日時: {meeting.date_source} / LLM呼び出し: {outcome.llm_calls}"
+        f"日付: {meeting.date_source} / 時刻: {meeting.time_source or '不明'} / "
+        f"LLM呼び出し: {outcome.llm_calls}"
     )
     if meeting.date_source in ("mtime", "unknown"):
         console.print(

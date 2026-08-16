@@ -5,6 +5,7 @@ title: {{ m.title | q }}
 kind: {{ m.kind }}
 date: {{ m.date.isoformat(timespec="seconds") }}
 date_source: {{ m.date_source }}
+time_source: {{ m.time_source or "unknown" }}
 attendees: [{{ m.attendees | map("q") | join(", ") }}]
 projects: [{{ m.project_ids() | map("q") | join(", ") }}]
 mic_mode: {{ m.speaker_stats.mic_mode }}
@@ -19,7 +20,7 @@ generated_by: comdiary
 
 # {{ m.title }}
 
-- 日時: {{ m.date.strftime("%Y-%m-%d %H:%M") }}{% if m.date_source in ("mtime", "unknown") %} **(ファイルの更新時刻から推定。会議の実時刻とは限りません)**{% endif +%}
+- 日時: {% if m.time_source %}{{ m.date.strftime("%Y-%m-%d %H:%M") }}{% else %}{{ m.date.strftime("%Y-%m-%d") }} (時刻不明){% endif %}{% if m.date_source in ("mtime", "unknown") %} **(ファイルの更新時刻から推定。会議の実時刻とは限りません)**{% endif +%}
 - 種別: {{ m.kind }}
 {% if m.attendees %}
 - 参加者: {{ m.attendees | whos(names) }}
