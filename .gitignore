@@ -1,0 +1,31 @@
+# --- CONFIDENTIALITY GUARD -------------------------------------------------
+# This repository is PUBLIC. It must never contain private material. A local
+# config points at real paths (Drive mounts, ledger location), so it is ignored;
+# examples/config.example.toml is the committed template.
+comdiary.toml
+.comdiary/
+/ledger/
+/memos/
+/memos_done/
+/memos_failed/
+*.ledger/
+# Scratch notes that are not meant to be published.
+*.local.md
+# ---------------------------------------------------------------------------
+
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+.DS_Store

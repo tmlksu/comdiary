@@ -1,0 +1,21 @@
+---
+comdiary: note
+project: {{ project_id }}
+meeting_id: {{ m.meeting_id }}
+segment_id: {{ s.segment_id }}
+title: {{ s.title | q }}
+date: {{ m.date.isoformat(timespec="seconds") }}
+kind: {{ m.kind }}
+source_meeting: {{ meeting_rel | q }}
+match: {{ s.match_method }}
+generated_by: comdiary
+---
+
+# {{ s.title }}
+
+> {{ m.date.strftime("%Y-%m-%d %H:%M") }} の「{{ m.title }}」より、この案件に関する部分の抜粋。
+> 会議全体は [{{ m.title }}]({{ meeting_rel }}) を参照。
+
+{{ s.summary }}
+
+{% include "_segment_body.md.j2" %}

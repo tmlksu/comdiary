@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      # Pin the interpreter unambiguously: a committed .python-version would
+      # otherwise win over the matrix entry and every job would run the same one.
+      - run: echo "${{ matrix.python-version }}" > .python-version
+      - run: uv sync --all-extras
+      - run: uv run python -c "import sys, mcp; print(sys.version); print('mcp', mcp.__name__)"
+      - run: uv run ruff check .
+      - run: uv run pytest

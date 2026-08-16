@@ -1,0 +1,7 @@
+{% for q in questions %}
+- [ ] {{ q.question }}
+  - 提起: {{ q.raised_by | who(names) or "不明" }} / {{ m.date.strftime("%Y-%m-%d") }} [{{ m.title }}]({{ meeting_rel }})
+{% if q.blocks %}
+  - 影響: {{ q.blocks }}
+{% endif %}
+{% endfor %}

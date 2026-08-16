@@ -1,0 +1,64 @@
+{# trim_blocks is on: a block tag that ends a content line must use `+%}`
+   so the line keeps its newline. Extra blank lines are harmless — render._tidy
+   collapses them — but a missing newline glues two list items together. #}
+{% if s.decisions %}
+**決まったこと**
+
+{% for d in s.decisions %}
+- {{ d.what }}{% if d.decided_by %} — 決定: {{ d.decided_by | whos(names) }}{% endif +%}
+{% if d.rationale %}
+  - 理由: {{ d.rationale }}
+{% endif %}
+{% endfor %}
+
+{% endif %}
+{% if s.actions %}
+**アクション**
+
+{% for a in s.actions %}
+- [{% if a.status == "done" %}x{% else %} {% endif %}] {{ a.what }} — 担当: {{ a.owner | who(names) or "未定" }} / 期限: {{ a.due or "未定" }}
+{% endfor %}
+
+{% endif %}
+{% if s.open_questions %}
+**未解決の論点**
+
+{% for q in s.open_questions %}
+- {{ q.question }}{% if q.raised_by %} (提起: {{ q.raised_by | who(names) }}){% endif +%}
+{% if q.blocks %}
+  - 影響: {{ q.blocks }}
+{% endif %}
+{% endfor %}
+
+{% endif %}
+{% if s.risks %}
+**リスク・懸念**
+
+{% for r in s.risks %}
+- [{{ r.impact }}] {{ r.what }}{% if r.raised_by %} (提起: {{ r.raised_by | who(names) }}){% endif +%}
+{% endfor %}
+
+{% endif %}
+{% if s.signals %}
+**温度感**
+
+{% for sig in s.signals %}
+- `{{ sig.kind }}` / **{{ sig.topic }}** / 強度 {{ sig.intensity }} / {% if sig.speaker %}{{ sig.speaker | who(names) }}{% else %}話者不明{% endif +%}
+  - {{ sig.evidence }}
+{% if sig.quote %}
+  - > {{ sig.quote }}
+{% endif %}
+{% if sig.concern %}
+  - 関心事: {{ sig.concern }}
+{% endif %}
+{% endfor %}
+
+{% endif %}
+{% if s.next_agenda %}
+**次回アジェンダ候補**
+
+{% for n in s.next_agenda %}
+- {{ n }}
+{% endfor %}
+
+{% endif %}

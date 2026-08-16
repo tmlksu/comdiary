@@ -1,0 +1,59 @@
+---
+comdiary: meeting
+meeting_id: {{ m.meeting_id }}
+title: {{ m.title | q }}
+kind: {{ m.kind }}
+date: {{ m.date.isoformat(timespec="seconds") }}
+attendees: [{{ m.attendees | map("q") | join(", ") }}]
+projects: [{{ m.project_ids() | map("q") | join(", ") }}]
+mic_mode: {{ m.speaker_stats.mic_mode }}
+speaker_attribution: {{ m.speaker_stats.attribution }}
+source_sha256: {{ m.source_sha256 }}
+source_archive: {{ m.source_archive | q }}
+generated_by: comdiary
+---
+
+<!-- このファイルは comdiary が生成します。手で編集しても `comdiary rerender` で上書きされます。
+     恒久的な記述は projects/<id>/ 配下に書いてください。 -->
+
+# {{ m.title }}
+
+- 日時: {{ m.date.strftime("%Y-%m-%d %H:%M") }}
+- 種別: {{ m.kind }}
+{% if m.attendees %}
+- 参加者: {{ m.attendees | whos(names) }}
+{% endif %}
+- 関連案件: {% if m.project_ids() %}{% for pid in m.project_ids() %}[{{ pid }}](../../../projects/{{ pid }}/README.md){% if not loop.last %} / {% endif %}{% endfor %}{% else %}(未割当){% endif +%}
+- 原文: `{{ m.source_archive or m.source_path }}`
+
+{% if m.summary %}
+## 全体サマリ
+
+{{ m.summary }}
+
+{% endif %}
+## 収録状況
+
+- マイク構成の推定: **{{ m.speaker_stats.mic_mode }}** / 話者帰属: **{{ m.speaker_stats.attribution }}**
+{% if m.speaker_stats.note %}
+- {{ m.speaker_stats.note }}
+{% endif %}
+{% if m.speaker_stats.distribution %}
+- 発言比率: {% for name, share in m.speaker_stats.distribution.items() %}{{ name }} {{ (share * 100) | round | int }}%{% if not loop.last %} / {% endif %}{% endfor +%}
+{% endif %}
+
+## セグメント
+
+{% for s in m.segments %}
+### {{ loop.index }}. {{ s.title }}
+
+- 案件: {% if s.project_id %}`{{ s.project_id }}`{% else %}**未割当**{% endif %} ({{ s.match_method }}{% if s.guess.rationale %} / {{ s.guess.rationale }}{% endif %})
+{% if s.span %}
+- 位置の手がかり: {{ s.span }}
+{% endif %}
+
+{{ s.summary }}
+
+{% include "_segment_body.md.j2" %}
+
+{% endfor %}

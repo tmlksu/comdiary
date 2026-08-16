@@ -1,0 +1,48 @@
+# comdiary の設定ファイル。
+# 探索順 (最初に見つかったものを使用):
+#   1. --config / $COMDIARY_CONFIG
+#   2. ./comdiary.toml
+#   3. ./.comdiary/config.toml
+#   4. ~/.comdiary/config.toml          ($COMDIARY_HOME で変更可)
+#   5. ~/.config/comdiary/config.toml   (Windows は %APPDATA%\comdiary\config.toml)
+#
+# 選ばれた設定ファイルと同じ場所に conf.d/*.toml があれば、
+# ファイル名順に上書きマージされます (共通設定 + マシン別の差分)。
+
+# 台帳の置き場所。手で開くことが多いなら見える場所を指定してください。
+ledger = "~/.comdiary/ledger"
+
+[ingest]
+# 議事録が溜まるフォルダ。Windows のパスは TOML のリテラル文字列
+# (シングルクォート) にすると \ をエスケープせずに書けます:
+#   inbox = 'G:\マイドライブ\meet-memos'
+inbox  = "~/memos"
+done   = "~/memos_done"
+failed = "~/memos_failed"
+
+# 1回の実行で処理する最大件数。
+limit = 5
+glob  = "*.md"
+
+# 書き込み途中のファイルを掴むと議事録が途中で切れたまま取り込まれ、
+# しかも後から気づけません。最終更新からこの秒数だけ静止したものだけを対象にします。
+quiet_seconds = 900
+
+[llm]
+backend = "copilot"      # copilot | fake | none
+model   = "auto"         # 使えるモデル名は `comdiary doctor --probe` で確認
+command = "copilot"
+extra_args = []
+timeout = 300
+retries = 2
+
+[match]
+# LLM の案件推定はこの確信度以上でのみ採用。下回ると _inbox に落ちます。
+min_confidence = 0.6
+# 無人実行中に案件を勝手に作らない。
+auto_create_projects = false
+
+[git]
+enabled = true
+# 台帳は非公開情報を含むためローカル専用。remote があるとコミットを拒否します。
+forbid_remote = true

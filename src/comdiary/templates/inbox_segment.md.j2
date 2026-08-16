@@ -1,0 +1,24 @@
+---
+comdiary: inbox
+meeting_id: {{ m.meeting_id }}
+segment_id: {{ s.segment_id }}
+title: {{ s.title | q }}
+date: {{ m.date.isoformat(timespec="seconds") }}
+suggested_project: {{ s.guess.suggested_name | q }}
+guess_confidence: {{ s.guess.confidence }}
+source_meeting: {{ meeting_rel | q }}
+---
+
+# [未割当] {{ s.title }}
+
+> {{ m.date.strftime("%Y-%m-%d %H:%M") }} 「{{ m.title }}」より。案件が確定していません。
+> 割り当て: `comdiary triage` または `comdiary assign {{ m.meeting_id }} {{ s.segment_id }} <project-id>`
+
+- 推定理由: {{ s.guess.rationale or "なし" }}
+{% if s.guess.suggested_name %}
+- 新規案件の提案: **{{ s.guess.suggested_name }}**
+{% endif %}
+
+{{ s.summary }}
+
+{% include "_segment_body.md.j2" %}

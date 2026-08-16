@@ -1,0 +1,23 @@
+---
+comdiary: project
+project: {{ p.id }}
+name: {{ p.name | q }}
+status: {{ p.status }}
+---
+
+# {{ p.name }}
+
+{{ p.summary or "(概要を書いてください)" }}
+
+## 現在地
+
+<!-- ここは人が書きます。comdiary は上書きしません。 -->
+
+## この案件の台帳
+
+- [未解決の論点](open-questions.md)
+- [引き継ぎメモ](handoff.md)
+- [ADR](adr/)
+- [仕様](spec/)
+- [会議メモ](notes/meetings/)
+- [月次ログ](logs/)

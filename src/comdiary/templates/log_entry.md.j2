@@ -1,0 +1,18 @@
+### {{ m.date.strftime("%Y-%m-%d %H:%M") }} — {{ s.title }}
+
+{{ s.summary }}
+
+{% if s.decisions %}
+- 決定: {% for d in s.decisions %}{{ d.what }}{% if not loop.last %} / {% endif %}{% endfor +%}
+{% endif %}
+{% if s.actions %}
+- アクション: {% for a in s.actions %}{{ a.what }}({{ a.owner | who(names) or "未定" }}){% if not loop.last %} / {% endif %}{% endfor +%}
+{% endif %}
+{% if s.open_questions %}
+- 未解決: {% for q in s.open_questions %}{{ q.question }}{% if not loop.last %} / {% endif %}{% endfor +%}
+{% endif %}
+{% if s.signals %}
+- 温度感: {% for sig in s.signals %}{{ sig.topic }}({{ sig.kind }}/{{ sig.intensity }}){% if not loop.last %} / {% endif %}{% endfor +%}
+{% endif %}
+
+→ [詳細]({{ note_rel }}) / [会議全体]({{ meeting_rel }})
