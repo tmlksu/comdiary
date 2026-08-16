@@ -37,6 +37,11 @@ from .state import State
 #: costs an LLM call and yields noise.
 MIN_SEGMENT_TITLE = 2
 
+#: How far into the document to look for a meeting date. Transcripts often state
+#: it in a header block, but that block can also carry a title, a link and a
+#: participant list first — so the window has to clear all of that.
+DATE_SCAN_CHARS = 2000
+
 _DATE_PATTERNS = (
     # Most specific first — a date-only match would silently discard the time.
     re.compile(r"(20\d{2})[-/年](\d{1,2})[-/月](\d{1,2})[日]?[^\d]{0,6}(\d{1,2})[:時](\d{2})"),
@@ -47,13 +52,29 @@ _DATE_PATTERNS = (
 )
 
 
-def guess_datetime(doc: SourceDoc, llm_date: str | None = None) -> datetime:
-    """Filename first, then the document head, then the file's mtime.
+@dataclass
+class DatedAt:
+    when: datetime
+    source: str
 
-    Meet exports put the date in the filename far more reliably than the LLM
-    reads it out of the body, so the cheap deterministic source wins.
+
+def guess_datetime(doc: SourceDoc, llm_date: str | None = None) -> DatedAt:
+    """Filename, then the document head, then the LLM, then the file's mtime.
+
+    The cheap deterministic sources go first because transcripts usually carry
+    the date in the filename, and reading it there is exact.
+
+    ``mtime`` is the last resort and is reported as such: when a transcript is
+    published after the fact (a notification arrives, a job fetches and converts
+    it), the file's write time is *not* the meeting time and can be off by
+    hours or days. Callers surface that so it is never a silent error.
     """
-    for candidate in (doc.name, doc.text[:600], llm_date or ""):
+    candidates = (
+        (doc.name, "filename"),
+        (doc.text[:DATE_SCAN_CHARS], "body"),
+        (llm_date or "", "llm"),
+    )
+    for candidate, source in candidates:
         for pattern in _DATE_PATTERNS:
             m = pattern.search(candidate)
             if not m:
@@ -61,16 +82,20 @@ def guess_datetime(doc: SourceDoc, llm_date: str | None = None) -> datetime:
             parts = [int(g) for g in m.groups()]
             try:
                 if len(parts) == 5:
-                    return datetime(parts[0], parts[1], parts[2], parts[3], parts[4]).astimezone()
-                return datetime(parts[0], parts[1], parts[2]).astimezone()
+                    when = datetime(parts[0], parts[1], parts[2], parts[3], parts[4])
+                else:
+                    when = datetime(parts[0], parts[1], parts[2])
             except ValueError:
                 continue
+            return DatedAt(when.astimezone(), source)
     if llm_date:
         try:
-            return datetime.fromisoformat(llm_date.replace("Z", "+00:00")).astimezone()
+            return DatedAt(datetime.fromisoformat(llm_date.replace("Z", "+00:00")).astimezone(), "llm")
         except ValueError:
             pass
-    return datetime.fromtimestamp(doc.mtime).astimezone() if doc.mtime else now()
+    if doc.mtime:
+        return DatedAt(datetime.fromtimestamp(doc.mtime).astimezone(), "mtime")
+    return DatedAt(now(), "unknown")
 
 
 @dataclass
@@ -177,7 +202,8 @@ class Pipeline:
         )
         outcome.llm_calls += 1
 
-        when = guess_datetime(doc, split.date)
+        dated = guess_datetime(doc, split.date)
+        when = dated.when
         segments = [s for s in split.segments if len(s.title.strip()) >= MIN_SEGMENT_TITLE]
         for i, seg in enumerate(segments, start=1):
             if not seg.segment_id:
@@ -199,6 +225,7 @@ class Pipeline:
             title=split.title.strip() or doc.path.stem,
             kind=doc.kind,  # type: ignore[arg-type]
             date=when,
+            date_source=dated.source,  # type: ignore[arg-type]
             attendees=split.attendees,
             summary=split.summary,
             source_path=str(doc.path),

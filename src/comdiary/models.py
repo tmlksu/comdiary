@@ -152,6 +152,11 @@ class Segment(Base):
     detail_extracted: bool = False
 
 
+#: Where a meeting's timestamp came from, most trustworthy first. Recorded
+#: because "mtime" means the file's write time, which for a transcript published
+#: after the fact (mail notification -> fetch -> convert) is not the meeting time.
+DateSource = Literal["filename", "body", "llm", "mtime", "unknown"]
+
 MicMode = Literal["shared", "per_speaker", "unknown"]
 
 
@@ -174,6 +179,7 @@ class Meeting(Base):
     title: str
     kind: Literal["meeting", "chat", "mail", "note"] = "meeting"
     date: datetime
+    date_source: DateSource = "unknown"
     attendees: list[str] = Field(default_factory=list)
     summary: str = ""
     source_path: str = ""

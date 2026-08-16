@@ -171,25 +171,80 @@ class TestDateGuess:
         return SourceDoc(path=Path(name), name=name, text=text, sha256="x", mtime=mtime)
 
     def test_filename_with_time(self):
-        dt = guess_datetime(self._doc("2026-08-13-1200-昼会.md"))
+        got = guess_datetime(self._doc("2026-08-13-1200-昼会.md"))
+        dt = got.when
         assert (dt.year, dt.month, dt.day, dt.hour, dt.minute) == (2026, 8, 13, 12, 0)
+        assert got.source == "filename"
 
     def test_filename_date_only(self):
-        dt = guess_datetime(self._doc("2026-08-13_昼会.md"))
-        assert (dt.year, dt.month, dt.day) == (2026, 8, 13)
+        got = guess_datetime(self._doc("2026-08-13_昼会.md"))
+        assert (got.when.year, got.when.month, got.when.day) == (2026, 8, 13)
+        assert got.source == "filename"
 
     def test_compact_filename(self):
-        dt = guess_datetime(self._doc("20260813T0930_meet.md"))
+        got = guess_datetime(self._doc("20260813T0930_meet.md"))
+        dt = got.when
         assert (dt.year, dt.month, dt.day, dt.hour) == (2026, 8, 13, 9)
 
     def test_japanese_date_in_body(self):
-        dt = guess_datetime(self._doc("memo.md", "日時: 2026年8月13日 14:30 より"))
+        got = guess_datetime(self._doc("memo.md", "日時: 2026年8月13日 14:30 より"))
+        dt = got.when
         assert (dt.month, dt.day, dt.hour, dt.minute) == (8, 13, 14, 30)
+        assert got.source == "body"
 
-    def test_falls_back_to_mtime(self):
-        dt = guess_datetime(self._doc("memo.md", "日付なし", mtime=1_760_000_000.0))
-        assert dt.year >= 2025
+    def test_filename_beats_body(self):
+        got = guess_datetime(self._doc("2026-08-13-1200-x.md", "日時: 2020年1月1日 09:00"))
+        assert (got.when.year, got.when.month) == (2026, 8)
+        assert got.source == "filename"
+
+    def test_llm_date_used_when_nothing_else_has_one(self):
+        got = guess_datetime(self._doc("memo.md", "日付なし"), llm_date="2026-08-13T14:30:00")
+        assert (got.when.month, got.when.day) == (8, 13)
+        assert got.source == "llm"
+
+    def test_mtime_fallback_is_flagged(self):
+        """The caller must be able to tell — a write time is not a meeting time."""
+        got = guess_datetime(self._doc("memo.md", "日付なし", mtime=1_760_000_000.0))
+        assert got.when.year >= 2025
+        assert got.source == "mtime"
 
     def test_invalid_date_does_not_crash(self):
-        dt = guess_datetime(self._doc("2026-13-45-memo.md", "本文", mtime=1_760_000_000.0))
-        assert dt.year >= 2025
+        got = guess_datetime(self._doc("2026-13-45-memo.md", "本文", mtime=1_760_000_000.0))
+        assert got.when.year >= 2025
+        assert got.source == "mtime"
+
+
+def test_meeting_records_where_its_date_came_from(config: Config):
+    write_memo(config, "2026-08-13-1200-昼会.md", SAMPLE_LUNCH)
+    report = run(config)
+    assert report.outcomes[0].meeting.date_source == "filename"
+
+
+def test_undated_source_is_marked_as_mtime_derived(config: Config):
+    """A transcript published after the fact carries the writer's clock, not the
+    meeting's — the ledger has to say so rather than quietly assert a date."""
+    write_memo(config, "議事メモ.md", "# 打ち合わせ\n田中: 進めましょう。\n")
+    report = run(config)
+    meeting = report.outcomes[0].meeting
+    assert meeting.date_source == "mtime"
+
+    paths = LedgerPaths(config.ledger)
+    md = next(paths.meetings.rglob("*.md")).read_text(encoding="utf-8")
+    assert "date_source: mtime" in md
+    assert "会議の実時刻とは限りません" in md
+
+
+def test_date_in_a_long_header_block_is_still_found():
+    """A converted document can carry a title, a link and a participant list
+    before it states the date; the scan window has to clear all of it."""
+    header = "# 定例ミーティング\n\n" + "参加者: 田中 太郎, 鈴木 花子\n" * 40
+    doc = SourceDoc(
+        path=Path("memo.md"),
+        name="memo.md",
+        text=header + "日時: 2026年8月13日 14:30\n\n田中: 始めます。\n",
+        sha256="x",
+        mtime=1_760_000_000.0,
+    )
+    got = guess_datetime(doc)
+    assert (got.when.month, got.when.day, got.when.hour) == (8, 13, 14)
+    assert got.source == "body"

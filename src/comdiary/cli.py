@@ -353,8 +353,15 @@ def _print_outcome(outcome: IngestOutcome) -> None:
     console.print(f"[green]ok[/green]   {name} → {meeting.title} ({meeting.date:%Y-%m-%d %H:%M})")
     console.print(
         f"       マイク: {meeting.speaker_stats.mic_mode} / "
-        f"話者帰属: {meeting.speaker_stats.attribution} / LLM呼び出し: {outcome.llm_calls}"
+        f"話者帰属: {meeting.speaker_stats.attribution} / "
+        f"日時: {meeting.date_source} / LLM呼び出し: {outcome.llm_calls}"
     )
+    if meeting.date_source in ("mtime", "unknown"):
+        console.print(
+            "       [yellow]警告[/yellow] 会議日時をファイル名からも本文からも読めず、"
+            "ファイルの更新時刻を使いました。\n"
+            "              文字起こしが会議より後に書き出される経路では、これは会議の時刻ではありません。"
+        )
     for seg in meeting.segments:
         target = seg.project_id or "[yellow]_inbox[/yellow]"
         counts = (

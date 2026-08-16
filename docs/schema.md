@@ -12,6 +12,7 @@
   "title": "昼会",
   "kind": "meeting",                   // meeting | chat | mail | note
   "date": "2026-08-13T12:00:00+09:00",
+  "date_source": "filename",           // filename | body | llm | mtime | unknown
   "attendees": ["田中 太郎", "鈴木 花子"],
   "summary": "...",
   "source_path": "G:/マイドライブ/memos/2026-08-13-1200-昼会.md",
@@ -23,8 +24,10 @@
 }
 ```
 
-`date` の決め方は「ファイル名 → 本文冒頭 → LLM の読み取り → ファイルの mtime」の順。
-Meet の書き出しはファイル名が最も当てになるため、安い決定論的な手段を先に試します。
+`date` の決め方は「ファイル名 → 本文冒頭 → LLM の読み取り → ファイルの mtime」の順で、
+どれが採用されたかを `date_source` に残します。安く確実な手段を先に試すのと、
+**`mtime` は会議の時刻とは限らない**(書き出しが後日になる経路がある)ため、
+その事実を後から追えるようにしておくのが目的です。
 
 ## SpeakerStats
 

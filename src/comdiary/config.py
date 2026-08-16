@@ -47,9 +47,12 @@ class IngestConfig(BaseModel):
     failed: Path | None = None
     limit: int = 5
     glob: str = "*.md"
-    #: A file must be untouched for this long before we take it — a transcript
-    #: that is still being appended to would be ingested truncated, invisibly.
-    quiet_seconds: int = 900
+    #: A file must be untouched for this long before we take it. Sources that
+    #: publish a finished document in one write only need enough of a margin for
+    #: the file to land (e.g. a Drive stream mount syncing it); sources that
+    #: append incrementally need longer than their write interval, or the
+    #: transcript gets ingested truncated and nothing later reveals it.
+    quiet_seconds: int = 60
 
 
 class LLMConfig(BaseModel):
@@ -197,9 +200,11 @@ failed = "~/memos_failed"
 limit = 5
 glob  = "*.md"
 
-# 書き込み途中のファイルを掴むと議事録が途中で切れたまま取り込まれ、
-# しかも後から気づけません。最終更新からこの秒数だけ静止したものだけを対象にします。
-quiet_seconds = 900
+# 最終更新からこの秒数だけ静止したファイルだけを対象にします。
+# 完成した文書を1回で書き出す経路なら、同期が届く程度の短い値で十分です。
+# 少しずつ追記していく経路なら、その書き込み間隔より長くしてください
+# (途中で掴むと議事録が切れたまま取り込まれ、後から気づけません)。
+quiet_seconds = 60
 
 [llm]
 backend = "copilot"      # copilot | fake | none

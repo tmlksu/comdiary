@@ -1,9 +1,9 @@
 """Discovering and reading input documents.
 
-Today there is one source: a directory that something else fills. In the
-intended deployment that directory is the Google Drive stream mount on Windows
-(``G:\\...``), written by a GAS script every few minutes. Nothing below assumes
-POSIX, and nothing assumes the file is finished — see ``quiet_seconds``.
+Today there is one source: a directory that something else fills — commonly a
+Google Drive stream mount on Windows (``G:\\...``) that an external script
+writes finished transcripts into. Nothing below assumes POSIX, and nothing
+assumes a file is ready the moment it appears — see ``quiet_seconds``.
 """
 
 from __future__ import annotations
@@ -53,14 +53,14 @@ def discover(
     inbox: Path,
     glob: str = "*.md",
     limit: int = 5,
-    quiet_seconds: int = 900,
+    quiet_seconds: int = 60,
     now: float | None = None,
 ) -> tuple[list[Path], list[Path]]:
-    """Return (ready, still-being-written).
+    """Return (ready, not-yet-settled).
 
-    A transcript that GAS is still appending to would be ingested truncated, and
-    the truncation is invisible afterwards — so a file must have been untouched
-    for ``quiet_seconds`` before we look at it.
+    A file must have been untouched for ``quiet_seconds`` before we look at it.
+    That covers both a writer still appending (truncation would be invisible
+    afterwards) and a synced volume that has not finished materialising it.
     """
     if not inbox.is_dir():
         raise FileNotFoundError(f"取り込み元フォルダが見つかりません: {inbox}")
