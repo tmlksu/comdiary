@@ -1,6 +1,7 @@
 [project]
 name = "comdiary"
-version = "0.1.0"
+# Single source of truth is comdiary.__version__ — two declarations always drift.
+dynamic = ["version"]
 description = "Docs-as-code ledger for company meetings, chats and mail — with a CLI and a thin MCP server for LLMs."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -44,6 +45,9 @@ dev = [
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/comdiary/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/comdiary"]

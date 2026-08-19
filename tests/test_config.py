@@ -189,3 +189,13 @@ class TestWindowsPaths:
             load_config(path)
         assert str(path) in str(exc.value)
         assert "シングルクォート" in str(exc.value)
+
+
+def test_packaging_metadata_matches_the_package_version():
+    """pyproject reads the version from comdiary.__init__; a mismatch here means
+    a wheel would ship a version the CLI does not report."""
+    from importlib.metadata import version
+
+    from comdiary import __version__
+
+    assert version("comdiary") == __version__
