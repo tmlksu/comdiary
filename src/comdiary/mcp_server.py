@@ -16,7 +16,7 @@ from datetime import datetime
 from typing import Any
 
 from .config import Config, load_config
-from .context import PURPOSES, aggregate_concerns, build_pack
+from .context import PURPOSES, aggregate_concerns, aggregate_topics, build_pack, topic_detail
 from .ingest.state import State
 from .ledger.paths import LedgerPaths
 from .models import Meeting
@@ -110,6 +110,31 @@ def build_server(cfg: Config):
         return _json(
             aggregate_concerns(cfg.ledger, person or None, project_id or None, months)
         )
+
+    @mcp.tool()
+    def topics(months: int = 12, min_count: int = 1, limit: int = 30) -> str:
+        """会議や案件をまたいで繰り返し出ている論点を、またぎの広さ順で返す。
+
+        まだ案件になっていない課題を探すときに使う。cross_project が true の
+        ものは複数の案件(または未割当)にまたがっており、個別案件では
+        解けていない可能性がある。「現場の点をつなぐ提案」の起点。
+        """
+        rows = aggregate_topics(cfg.ledger, months=months, min_count=min_count)[:limit]
+        for row in rows:
+            row.pop("occurrences", None)  # keep the list scannable; use topic_get
+        return _json(rows)
+
+    @mcp.tool()
+    def topic_get(topic: str, months: int = 12) -> str:
+        """1つの論点について、出現箇所・関係者・関心事・未解決事項をすべて返す。
+
+        提案を組み立てるための材料。誰がどう反応したか(温度感)も含むので、
+        通し方まで含めて考えられる。
+        """
+        detail = topic_detail(cfg.ledger, topic, months)
+        if detail is None:
+            return _json({"error": f"論点 '{topic}' の記録がありません"})
+        return _json(detail)
 
     @mcp.tool()
     def timeline(project_id: str, limit: int = 20) -> str:

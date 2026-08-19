@@ -279,9 +279,15 @@ class Pipeline:
                 seg.match_method = "manual"
         match_all(segments, self.registry, self.config.match.min_confidence)
 
+        # Existing vocabulary goes back into the prompt so labels converge
+        # rather than fragmenting; aggregation is the whole point of topics.
+        known_topics = self.state.known_topics()
         for seg in segments:
-            self._extract_detail(doc, seg, stats, outcome)
+            self._extract_detail(doc, seg, stats, outcome, known_topics)
             apply_mic_policy(seg.signals, stats)
+            for topic in seg.topics:
+                if topic not in known_topics:
+                    known_topics.append(topic)
 
         archive = self._archive(doc, when)
         return Meeting(
@@ -302,7 +308,14 @@ class Pipeline:
             llm={"backend": getattr(self.llm, "name", "?"), "model": self.config.llm.model},
         )
 
-    def _extract_detail(self, doc: SourceDoc, seg: Segment, stats, outcome: IngestOutcome) -> None:
+    def _extract_detail(
+        self,
+        doc: SourceDoc,
+        seg: Segment,
+        stats,
+        outcome: IngestOutcome,
+        known_topics: list[str] | None = None,
+    ) -> None:
         project = self.registry.project(seg.project_id) if seg.project_id else None
         detail: DetailResponse = self.llm.complete_json(
             detail_prompt(
@@ -312,12 +325,14 @@ class Pipeline:
                 project.name if project else None,
                 self.registry,
                 stats,
+                known_topics,
             ),
             DetailResponse,
         )
         outcome.llm_calls += 1
         if detail.summary:
             seg.summary = detail.summary
+        seg.topics = [t.strip() for t in detail.topics if t.strip()][:5]
         seg.decisions = detail.decisions
         seg.actions = detail.actions
         seg.open_questions = detail.open_questions

@@ -22,7 +22,7 @@ from .config import (
     load_config,
     toml_string,
 )
-from .context import PURPOSES, aggregate_concerns, build_pack
+from .context import PURPOSES, aggregate_concerns, aggregate_topics, build_pack, topic_detail
 from .ingest.pipeline import IngestOutcome, Pipeline, RunReport
 from .ingest.sources import discover, iter_paths, load_doc
 from .ingest.state import State
@@ -611,6 +611,87 @@ def concerns(
                 " / ".join(r["concerns"])[:60],
             )
         console.print(table)
+
+    _emit(rows, as_json, render)
+
+
+@app.command()
+def topics(
+    show: Annotated[str | None, typer.Option("--show", help="1つの論点を掘り下げる")] = None,
+    project: Annotated[str | None, typer.Option("--project", "-p")] = None,
+    months: Annotated[int, typer.Option("--months", help="遡る月数")] = 12,
+    min_count: Annotated[int, typer.Option("--min-count", help="この回数以上のものだけ")] = 1,
+    limit: Annotated[int, typer.Option("--limit", "-n")] = 30,
+    config: ConfigOpt = None,
+    as_json: JsonOpt = False,
+) -> None:
+    """会議や案件をまたいで繰り返し出ている論点を集計する。
+
+    案件になる前の話題を見つけるためのコマンド。案件をまたぐものほど上に来ます。
+    案件未割当(_inbox)の話題も「まだどこにも属していない」ものとして数えます。
+    """
+    cfg = Ctx.load(config)
+
+    if show:
+        detail = topic_detail(cfg.ledger, show, months)
+        if detail is None:
+            _fail(f"論点 '{show}' の記録がありません")
+
+        def render_detail() -> None:
+            console.print(f"[bold]{detail['topic']}[/bold]")
+            reach = "、".join(detail["projects"]) or "(なし)"
+            console.print(
+                f"  {detail['count']}回 / {detail['meeting_count']}会議 / 案件: {reach}"
+                + (f" / 未割当 {detail['unassigned']}件" if detail["unassigned"] else "")
+            )
+            if detail["people"]:
+                console.print(f"  関係者: {'、'.join(detail['people'])}")
+            if detail["kinds"]:
+                console.print(f"  温度: {'、'.join(detail['kinds'])} (最大 {detail['max_intensity']})")
+            if detail["concerns"]:
+                console.print("\n  [bold]根底にある関心事[/bold]")
+                for c in detail["concerns"]:
+                    console.print(f"    - {c}")
+            if detail["open_questions"]:
+                console.print("\n  [bold]未解決の論点[/bold]")
+                for q in detail["open_questions"]:
+                    console.print(f"    - {q}")
+            console.print("\n  [bold]出現箇所[/bold]")
+            for o in detail["occurrences"]:
+                where = o["project"] or "[yellow]_inbox[/yellow]"
+                console.print(f"    {o['date'][:10]} {where} — {o['segment']}")
+                console.print(f"      [dim]{o['doc']}[/dim]")
+
+        _emit(detail, as_json, render_detail)
+        return
+
+    rows = aggregate_topics(cfg.ledger, months, project, min_count)[:limit]
+
+    def render() -> None:
+        if not rows:
+            console.print(
+                "[yellow]記録された論点がありません[/yellow]\n"
+                "議事録を取り込むと、抽出された論点がここに集計されます。"
+            )
+            return
+        table = Table("論点", "回数", "会議", "案件", "未割当", "温度", "未解決")
+        for r in rows:
+            topic = f"[bold]{r['topic']}[/bold]" if r["cross_project"] else r["topic"]
+            table.add_row(
+                topic,
+                str(r["count"]),
+                str(r["meeting_count"]),
+                "、".join(r["projects"]) or "-",
+                str(r["unassigned"]) if r["unassigned"] else "-",
+                r["max_intensity"] if r["kinds"] else "-",
+                str(len(r["open_questions"])) if r["open_questions"] else "-",
+            )
+        console.print(table)
+        console.print(
+            "\n[bold]太字[/bold]は複数の案件(または未割当)にまたがる論点です。"
+            "個別案件では解けていない可能性があります。"
+        )
+        console.print("掘り下げ: [bold]comdiary topics --show <論点>[/bold]")
 
     _emit(rows, as_json, render)
 

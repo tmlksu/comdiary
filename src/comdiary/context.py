@@ -267,3 +267,123 @@ def aggregate_concerns(
         buckets.values(),
         key=lambda b: (-b["count"], -order[b["max_intensity"]], b["latest"]),
     )
+
+
+#: A topic seen in this many distinct projects is, almost by definition, not a
+#: single project's problem — that is the signal worth surfacing.
+CROSS_PROJECT_THRESHOLD = 2
+
+_INTENSITY_ORDER = {"low": 0, "medium": 1, "high": 2}
+
+
+def aggregate_topics(
+    ledger: Path,
+    months: int = 12,
+    project_id: str | None = None,
+    min_count: int = 1,
+) -> list[dict[str, Any]]:
+    """Roll every segment up by topic, across projects.
+
+    This is the candidate list for "what is turning into an issue". Ranking puts
+    reach before frequency: a topic raised once in each of three projects is a
+    stronger sign of a systemic gap than one raised five times inside a single
+    project, which is just that project's normal work.
+
+    Segments with no project are counted under ``_inbox`` and treated as reach —
+    an unassigned topic is precisely the not-yet-a-project case.
+    """
+    registry = Registry.load(ledger)
+    paths = LedgerPaths(ledger)
+    since = (datetime.now().astimezone() - timedelta(days=30 * months)).isoformat(timespec="seconds")
+
+    with State(paths.state_db) as state:
+        rows = state.topic_rows(since=since, project_id=project_id)
+        signals = state.signals_by_segment(since=since)
+        questions = state.open_questions_by_segment()
+
+    signals_at: dict[tuple[str, str], list] = {}
+    for sig in signals:
+        signals_at.setdefault((sig["meeting_id"], sig["segment_id"]), []).append(sig)
+    questions_at: dict[tuple[str, str], list[str]] = {}
+    for q in questions:
+        questions_at.setdefault((q["meeting_id"], q["segment_id"]), []).append(q["text"])
+
+    buckets: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        key = row["topic"]
+        bucket = buckets.setdefault(
+            key,
+            {
+                "topic": key,
+                "count": 0,
+                "projects": [],
+                "unassigned": 0,
+                "meetings": [],
+                "people": [],
+                "kinds": [],
+                "max_intensity": "low",
+                "concerns": [],
+                "open_questions": [],
+                "latest": "",
+                "occurrences": [],
+            },
+        )
+        bucket["count"] += 1
+        bucket["latest"] = max(bucket["latest"], row["date"])
+        if row["project_id"]:
+            if row["project_id"] not in bucket["projects"]:
+                bucket["projects"].append(row["project_id"])
+        else:
+            bucket["unassigned"] += 1
+        if row["meeting_id"] not in bucket["meetings"]:
+            bucket["meetings"].append(row["meeting_id"])
+
+        at = (row["meeting_id"], row["segment_id"])
+        for sig in signals_at.get(at, []):
+            who = registry.display_person(sig["speaker"]) if sig["speaker"] else "(話者不明)"
+            if who not in bucket["people"]:
+                bucket["people"].append(who)
+            if sig["kind"] not in bucket["kinds"]:
+                bucket["kinds"].append(sig["kind"])
+            if _INTENSITY_ORDER[sig["intensity"]] > _INTENSITY_ORDER[bucket["max_intensity"]]:
+                bucket["max_intensity"] = sig["intensity"]
+            if sig["concern"] and sig["concern"] not in bucket["concerns"]:
+                bucket["concerns"].append(sig["concern"])
+        for text in questions_at.get(at, []):
+            if text not in bucket["open_questions"]:
+                bucket["open_questions"].append(text)
+
+        bucket["occurrences"].append(
+            {
+                "date": row["date"],
+                "project": row["project_id"],
+                "meeting": row["meeting_title"],
+                "segment": row["segment_title"],
+                "summary": row["segment_summary"],
+                "doc": row["meeting_doc"],
+                "meeting_id": row["meeting_id"],
+                "segment_id": row["segment_id"],
+            }
+        )
+
+    out = []
+    for bucket in buckets.values():
+        if bucket["count"] < min_count:
+            continue
+        bucket["reach"] = len(bucket["projects"]) + (1 if bucket["unassigned"] else 0)
+        bucket["cross_project"] = bucket["reach"] >= CROSS_PROJECT_THRESHOLD
+        bucket["meeting_count"] = len(bucket["meetings"])
+        out.append(bucket)
+
+    return sorted(
+        out,
+        key=lambda b: (-b["reach"], -b["count"], -b["meeting_count"], b["latest"]),
+    )
+
+
+def topic_detail(ledger: Path, topic: str, months: int = 12) -> dict[str, Any] | None:
+    """Everything recorded under one topic — the material for a proposal."""
+    for bucket in aggregate_topics(ledger, months=months):
+        if bucket["topic"] == topic:
+            return bucket
+    return None

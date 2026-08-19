@@ -113,6 +113,31 @@ title・summary・span・guess・speakers に集中してください。
 """
 
 
+TOPIC_GUIDE = """\
+### 論点(topics)の付け方
+このセグメントが**何についての話か**を、短い名詞句で1-3個挙げてください。
+これは後から「どの論点が会議や案件をまたいで繰り返し出ているか」を集計するための
+キーになります。集計できることが目的なので、表記を揃えることが何より重要です。
+
+- 短い名詞句にする。「納期」であって「納期が厳しいという話」ではない
+- 一般的すぎる語(「進捗」「共有」「相談」)は避ける。何にでも付いて集計の役に立たない
+- 案件名そのものは論点ではありません。案件の中で何が問題になっているかを書く
+- 揉めたかどうかは関係ありません。淡々と進んだ話題にも論点はあります
+"""
+
+
+def _known_topics_block(known_topics: list[str]) -> str:
+    if not known_topics:
+        return ""
+    listed = "、".join(known_topics)
+    return (
+        "\n**既出の論点(同じことを指すなら、必ずこの表記をそのまま使ってください):**\n"
+        f"{listed}\n"
+        "同じ内容に別の言い方を当てると集計が分断されます。"
+        "どれにも当てはまらない場合にのみ、新しい語を作ってください。\n"
+    )
+
+
 def detail_prompt(
     text: str,
     segment_title: str,
@@ -120,6 +145,7 @@ def detail_prompt(
     project_name: str | None,
     registry: Registry,
     stats: SpeakerStats,
+    known_topics: list[str] | None = None,
 ) -> str:
     scope = f"「{segment_title}」"
     if segment_span:
@@ -137,6 +163,7 @@ def detail_prompt(
 {project_line}
 ## 抽出するもの
 - summary       : この話題で何が起きたかの要約(3-5文)。決まったこと・揉めたこと・残ったことが分かるように。
+- topics        : この話題を表す短い名詞句(1-3個)。下記の方針に従って。
 - decisions     : 決まったこと。決まっていないものを決定として書かないこと。
 - actions       : 誰が何をいつまでに。owner/due が不明なら null。
 - open_questions: 未解決の論点。blocks には「これが決まらないと何が止まるか」を書く。
@@ -144,6 +171,7 @@ def detail_prompt(
 - next_agenda   : 次回話すべきと明示された事項。
 - signals       : 下記の方針に従って。
 
+{TOPIC_GUIDE}{_known_topics_block(known_topics or [])}
 {SIGNAL_GUIDE}
 
 {_mic_guide(stats)}

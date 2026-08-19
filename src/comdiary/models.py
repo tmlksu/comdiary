@@ -136,6 +136,12 @@ class Segment(Base):
     segment_id: str = Field(description="'s1', 's2', ... 会議内で一意")
     title: str
     summary: str = ""
+    #: Short noun phrases naming what this segment is *about*. The aggregation
+    #: key for `comdiary topics`, which is how a recurring concern becomes
+    #: visible before anyone has decided it is a project. Deliberately separate
+    #: from Signal.topic: signals are only recorded when something is notable,
+    #: so relying on them would surface only the loud subjects.
+    topics: list[str] = Field(default_factory=list)
     span: str = Field(default="", description="転記上の位置。見出し・時刻・冒頭の一文など")
     speakers: list[str] = Field(default_factory=list)
     guess: ProjectGuess = Field(default_factory=ProjectGuess)
@@ -219,6 +225,9 @@ class DetailResponse(Base):
     """Pass 2: deep extraction for a single segment."""
 
     summary: str = ""
+    topics: list[str] = Field(
+        default_factory=list, description="この話題を表す短い名詞句を1-3個"
+    )
     decisions: list[Decision] = Field(default_factory=list)
     actions: list[ActionItem] = Field(default_factory=list)
     open_questions: list[OpenQuestion] = Field(default_factory=list)

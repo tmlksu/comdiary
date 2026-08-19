@@ -77,6 +77,16 @@ CREATE TABLE IF NOT EXISTS items (
 );
 CREATE INDEX IF NOT EXISTS idx_items_type ON items(item_type, project_id);
 
+CREATE TABLE IF NOT EXISTS segment_topics (
+    meeting_id TEXT NOT NULL,
+    segment_id TEXT NOT NULL,
+    project_id TEXT,
+    date       TEXT NOT NULL,
+    topic      TEXT NOT NULL,
+    PRIMARY KEY (meeting_id, segment_id, topic)
+);
+CREATE INDEX IF NOT EXISTS idx_segment_topics ON segment_topics(topic);
+
 CREATE VIRTUAL TABLE IF NOT EXISTS docs USING fts5(
     body, title, project_id UNINDEXED, meeting_id UNINDEXED,
     segment_id UNINDEXED, date UNINDEXED, doc UNINDEXED, tokenize='trigram'
@@ -185,7 +195,7 @@ class State:
 
     # -- indexing ---------------------------------------------------------
     def forget_meeting(self, meeting_id: str) -> None:
-        for table in ("meetings", "segments", "signals", "items"):
+        for table in ("meetings", "segments", "signals", "items", "segment_topics"):
             self.conn.execute(f"DELETE FROM {table} WHERE meeting_id = ?", (meeting_id,))
         self.conn.execute("DELETE FROM docs WHERE meeting_id = ?", (meeting_id,))
 
@@ -217,7 +227,7 @@ class State:
                 (meeting.meeting_id, seg.segment_id, seg.project_id, seg.title, seg.summary, date),
             )
             body = "\n".join(
-                [seg.title, seg.summary]
+                [seg.title, seg.summary, " ".join(seg.topics)]
                 + [d.what for d in seg.decisions]
                 + [a.what for a in seg.actions]
                 + [q.question for q in seg.open_questions]
@@ -230,6 +240,12 @@ class State:
                 " VALUES (?,?,?,?,?,?,?)",
                 (body, seg.title, seg.project_id or "", meeting.meeting_id, seg.segment_id, date, doc),
             )
+            for topic in dict.fromkeys(t.strip() for t in seg.topics if t.strip()):
+                self.conn.execute(
+                    "INSERT OR IGNORE INTO segment_topics"
+                    " (meeting_id, segment_id, project_id, date, topic) VALUES (?,?,?,?,?)",
+                    (meeting.meeting_id, seg.segment_id, seg.project_id, date, topic),
+                )
             for sig in seg.signals:
                 self.conn.execute(
                     "INSERT INTO signals (meeting_id, segment_id, project_id, date, speaker, kind,"
@@ -370,9 +386,58 @@ class State:
             (project_id, limit),
         ).fetchall()
 
+    def known_topics(self, limit: int = 40) -> list[str]:
+        """Topics already in use, most frequent first.
+
+        Fed back into the extraction prompt so the vocabulary converges instead
+        of fragmenting into 納期 / スケジュール / 期日 — aggregation across
+        meetings only works if the same idea keeps the same label.
+        """
+        rows = self.conn.execute(
+            "SELECT topic, COUNT(*) AS c FROM segment_topics"
+            " GROUP BY topic ORDER BY c DESC, topic LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [r["topic"] for r in rows]
+
+    def topic_rows(self, since: str | None = None, project_id: str | None = None):
+        """Every (segment, topic) pair with the context needed to rank it."""
+        sql = [
+            "SELECT t.topic, t.project_id, t.meeting_id, t.segment_id, t.date,",
+            " m.title AS meeting_title, m.doc AS meeting_doc, s.title AS segment_title,",
+            " s.summary AS segment_summary",
+            " FROM segment_topics t",
+            " JOIN meetings m ON m.meeting_id = t.meeting_id",
+            " JOIN segments s ON s.meeting_id = t.meeting_id AND s.segment_id = t.segment_id",
+            " WHERE 1=1",
+        ]
+        params: list[object] = []
+        if since:
+            sql.append(" AND t.date >= ?")
+            params.append(since)
+        if project_id:
+            sql.append(" AND t.project_id = ?")
+            params.append(project_id)
+        sql.append(" ORDER BY t.date DESC")
+        return self.conn.execute("".join(sql), params).fetchall()
+
+    def signals_by_segment(self, since: str | None = None):
+        sql = "SELECT * FROM signals WHERE 1=1"
+        params: list[object] = []
+        if since:
+            sql += " AND date >= ?"
+            params.append(since)
+        return self.conn.execute(sql, params).fetchall()
+
+    def open_questions_by_segment(self):
+        return self.conn.execute(
+            "SELECT meeting_id, segment_id, text FROM items"
+            " WHERE item_type = 'question' AND (status IS NULL OR status = 'open')"
+        ).fetchall()
+
     def stats(self) -> dict[str, int]:
         out = {}
-        for table in ("meetings", "segments", "signals", "items", "sources"):
+        for table in ("meetings", "segments", "signals", "items", "segment_topics", "sources"):
             out[table] = int(
                 self.conn.execute(f"SELECT COUNT(*) AS c FROM {table}").fetchone()["c"]
             )

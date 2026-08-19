@@ -115,6 +115,8 @@ comdiary assign <meeting_id> s2 alpha-migration
 # 読む
 comdiary project show alpha-migration
 comdiary search 切替日 -p alpha-migration
+comdiary topics                        # 案件をまたぐ論点(まだ案件でない課題を探す)
+comdiary topics --show 属人化          # 1つの論点を掘り下げる
 comdiary questions                     # 未解決の論点(横断)
 comdiary actions -p alpha-migration    # 未完了のアクション
 comdiary concerns --person 鈴木        # 誰が何を気にしているか
@@ -142,6 +144,7 @@ comdiary mcp   # stdio
 | `meeting_get` | 会議の正本 |
 | `open_questions` / `open_actions` | 未解決・未完了 |
 | `person_concerns` | 誰が何を気にしているか |
+| `topics` / `topic_get` | 案件をまたぐ論点(点をつなぐ起点) |
 | `timeline` | 案件の時系列 |
 | `append_note` | 追記(唯一の書き込み) |
 

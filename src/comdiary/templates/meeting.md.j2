@@ -50,6 +50,9 @@ generated_by: comdiary
 ### {{ loop.index }}. {{ s.title }}
 
 - 案件: {% if s.project_id %}`{{ s.project_id }}`{% else %}**未割当**{% endif %} ({{ s.match_method }}{% if s.guess.rationale %} / {{ s.guess.rationale }}{% endif %})
+{% if s.topics %}
+- 論点: {% for t in s.topics %}`{{ t }}`{% if not loop.last %} / {% endif %}{% endfor +%}
+{% endif %}
 {% if s.span %}
 - 位置の手がかり: {{ s.span }}
 {% endif %}

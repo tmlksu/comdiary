@@ -7,6 +7,7 @@ title: {{ s.title | q }}
 date: {{ m.date.isoformat(timespec="seconds") }}
 kind: {{ m.kind }}
 source_meeting: {{ meeting_rel | q }}
+topics: [{{ s.topics | map("q") | join(", ") }}]
 match: {{ s.match_method }}
 generated_by: comdiary
 ---

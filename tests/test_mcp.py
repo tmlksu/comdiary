@@ -27,6 +27,8 @@ EXPECTED_TOOLS = {
     "open_questions",
     "open_actions",
     "person_concerns",
+    "topics",
+    "topic_get",
     "timeline",
     "append_note",
 }
