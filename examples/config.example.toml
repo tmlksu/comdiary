@@ -10,15 +10,16 @@
 # ファイル名順に上書きマージされます (共通設定 + マシン別の差分)。
 
 # 台帳の置き場所。手で開くことが多いなら見える場所を指定してください。
-ledger = "~/.comdiary/ledger"
+ledger = '~/.comdiary/ledger'
 
 [ingest]
-# 議事録が溜まるフォルダ。Windows のパスは TOML のリテラル文字列
-# (シングルクォート) にすると \ をエスケープせずに書けます:
+# 議事録が溜まるフォルダ。
+# パスはシングルクォート(リテラル文字列)で囲んでください。ダブルクォートだと
+# Windows の \ がエスケープとして解釈され、'C:\Users' などが読めなくなります。
 #   inbox = 'G:\マイドライブ\meet-memos'
-inbox  = "~/memos"
-done   = "~/memos_done"
-failed = "~/memos_failed"
+inbox  = '~/memos'
+done   = '~/memos_done'
+failed = '~/memos_failed'
 
 # 1回の実行で処理する最大件数。
 limit = 5

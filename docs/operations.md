@@ -13,11 +13,15 @@ Drive 上の文字起こしをそのまま読むならこの構成になりま�
 
 `%USERPROFILE%\.comdiary\config.toml`:
 
+**パスは必ずシングルクォートで囲んでください。**
+ダブルクォートだと TOML が `\` をエスケープとして解釈し、
+`C:\Users` が `\U`(Unicode エスケープ)扱いになって
+`Invalid hex value` で読めなくなります。
+
 ```toml
 ledger = 'C:\Users\you\ledger'
 
 [ingest]
-# TOML のリテラル文字列(シングルクォート)にすると \ をエスケープせずに書けます
 inbox  = 'G:\マイドライブ\meet-memos'
 done   = 'G:\マイドライブ\meet-memos-done'
 failed = 'C:\Users\you\comdiary-failed'

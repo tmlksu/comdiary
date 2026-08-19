@@ -16,9 +16,11 @@ from .config import (
     DOTDIR,
     EXAMPLE_TOML,
     Config,
+    ConfigError,
     candidate_paths,
     default_config_path,
     load_config,
+    toml_string,
 )
 from .context import PURPOSES, aggregate_concerns, build_pack
 from .ingest.pipeline import IngestOutcome, Pipeline, RunReport
@@ -57,7 +59,7 @@ class Ctx:
     def load(cls, path: Path | None, llm_override: str | None = None) -> Config:
         try:
             cfg = load_config(path)
-        except FileNotFoundError as exc:
+        except (FileNotFoundError, ConfigError) as exc:
             _fail(str(exc))
             raise  # unreachable; _fail raises
         if llm_override:
@@ -121,7 +123,8 @@ def init(
         return
     target = (Path.cwd() / DOTDIR / CONFIG_NAME) if here else default_config_path()
     atomic_write(
-        target, EXAMPLE_TOML.replace('ledger = "~/.comdiary/ledger"', f'ledger = "{root}"')
+        target,
+        EXAMPLE_TOML.replace("ledger = '~/.comdiary/ledger'", f"ledger = {toml_string(root)}"),
     )
     console.print(f"  + {target} (取り込み元パスを編集してください)")
 

@@ -150,3 +150,42 @@ def test_example_config_parses(tmp_path: Path, isolated: Path):
     cfg = load_config(path)
     assert cfg.ingest.inbox is not None
     assert cfg.llm.backend == "copilot"
+
+
+class TestWindowsPaths:
+    r"""A Windows ledger path is the reason paths are written as TOML *literal*
+    strings: inside a basic string, "C:\Users" is the escape \U and fails to
+    parse with "invalid hex value"."""
+
+    def test_backslash_path_round_trips(self, tmp_path: Path, isolated: Path):
+        from comdiary.config import EXAMPLE_TOML, toml_string
+
+        win = r"C:\Users\you\.comdiary\ledger"
+        body = EXAMPLE_TOML.replace(
+            "ledger = '~/.comdiary/ledger'", f"ledger = {toml_string(win)}"
+        )
+        cfg = load_config(write(tmp_path / "comdiary.toml", body))
+        assert str(cfg.ledger).endswith("ledger")
+
+    def test_toml_string_prefers_a_literal_string(self):
+        from comdiary.config import toml_string
+
+        assert toml_string(r"G:\マイドライブ\memos") == r"'G:\マイドライブ\memos'"
+        assert toml_string("/home/x/ledger") == "'/home/x/ledger'"
+
+    def test_toml_string_falls_back_when_a_quote_is_present(self):
+        import tomllib
+
+        from comdiary.config import toml_string
+
+        rendered = toml_string("/tmp/it's here")
+        assert tomllib.loads(f"p = {rendered}")["p"] == "/tmp/it's here"
+
+    def test_broken_toml_names_the_file_and_the_cause(self, tmp_path: Path, isolated: Path):
+        from comdiary.config import ConfigError
+
+        path = write(tmp_path / "comdiary.toml", 'ledger = "C:\\Users\\you\\ledger"\n')
+        with pytest.raises(ConfigError) as exc:
+            load_config(path)
+        assert str(path) in str(exc.value)
+        assert "シングルクォート" in str(exc.value)

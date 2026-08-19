@@ -8,6 +8,7 @@ machine-specific overrides on top of a shared base.
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 import tomllib
@@ -143,8 +144,35 @@ def deep_merge(base: dict, overlay: dict) -> dict:
     return out
 
 
+def toml_string(value: str | Path) -> str:
+    """Render a path (or any string) as a TOML string.
+
+    Prefers a literal string (single quotes) because Windows paths are full of
+    backslashes, and inside a TOML *basic* string ``C:\\Users`` is read as the
+    escape ``\\U`` — which fails with "invalid hex value" rather than doing
+    anything sensible. Literal strings have no escapes at all.
+    """
+    text = str(value)
+    if "'" not in text and not any(c in text for c in "\n\r\x00"):
+        return f"'{text}'"
+    return json.dumps(text, ensure_ascii=False)
+
+
+class ConfigError(ValueError):
+    pass
+
+
 def _read_toml(path: Path) -> dict:
-    return tomllib.loads(path.read_text(encoding="utf-8"))
+    try:
+        return tomllib.loads(path.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError as exc:
+        raise ConfigError(
+            f"設定ファイルを読めませんでした: {path}\n"
+            f"  {exc}\n"
+            "  Windows のパスは \\ がエスケープとして解釈されます。"
+            "シングルクォートで囲んでください:\n"
+            "    inbox = 'G:\\マイドライブ\\memos'"
+        ) from exc
 
 
 def load_config(explicit: Path | None = None, cwd: Path | None = None) -> Config:
@@ -186,15 +214,16 @@ EXAMPLE_TOML = """\
 # ファイル名順に上書きマージされます (共通設定 + マシン別の差分)。
 
 # 台帳の置き場所。手で開くことが多いなら見える場所を指定してください。
-ledger = "~/.comdiary/ledger"
+ledger = '~/.comdiary/ledger'
 
 [ingest]
-# 議事録が溜まるフォルダ。Windows のパスは TOML のリテラル文字列
-# (シングルクォート) にすると \\ をエスケープせずに書けます:
+# 議事録が溜まるフォルダ。
+# パスはシングルクォート(リテラル文字列)で囲んでください。ダブルクォートだと
+# Windows の \\ がエスケープとして解釈され、'C:\\Users' などが読めなくなります。
 #   inbox = 'G:\\マイドライブ\\meet-memos'
-inbox  = "~/memos"
-done   = "~/memos_done"
-failed = "~/memos_failed"
+inbox  = '~/memos'
+done   = '~/memos_done'
+failed = '~/memos_failed'
 
 # 1回の実行で処理する最大件数。
 limit = 5
