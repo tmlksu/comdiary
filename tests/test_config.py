@@ -198,4 +198,7 @@ def test_packaging_metadata_matches_the_package_version():
 
     from comdiary import __version__
 
-    assert version("comdiary") == __version__
+    assert version("comdiary") == __version__, (
+        "インストール済みのメタデータが古い可能性があります。"
+        "バージョンを変更した直後は uv sync --reinstall-package comdiary が必要です。"
+    )
