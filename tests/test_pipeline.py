@@ -111,7 +111,7 @@ def test_unmatched_segment_goes_to_inbox(config: Config):
 
 def test_failed_source_moves_to_failed_dir(config: Config):
     class Broken(FakeBackend):
-        def complete_json(self, prompt, schema):
+        def complete_json(self, prompt, schema, context=None):
             raise RuntimeError("模擬的な失敗")
 
     path = write_memo(config, "broken.md", SAMPLE_LUNCH)

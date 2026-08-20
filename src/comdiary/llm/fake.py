@@ -15,6 +15,7 @@ from pydantic import BaseModel
 
 from ..config import LLMConfig
 from ..models import DetailResponse, OpenQuestion, Segment, SplitResponse
+from .backend import compose_prompt
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -49,7 +50,20 @@ class FakeBackend:
         self.cfg = cfg or LLMConfig(backend="fake")
         self.calls: list[tuple[str, str]] = []
 
-    def complete_json(self, prompt: str, schema: type[T]) -> T:
+    def preflight(self) -> tuple[bool, str]:
+        return True, "オフラインの疑似バックエンド"
+
+    def probe(self) -> tuple[bool, str]:
+        return True, "オフラインの疑似バックエンド"
+
+    def release_context(self) -> None:
+        return None
+
+    def close(self) -> None:
+        return None
+
+    def complete_json(self, prompt: str, schema: type[T], context: str | None = None) -> T:
+        prompt = compose_prompt(prompt, context)
         self.calls.append((schema.__name__, prompt))
         if schema is SplitResponse:
             return self._split(prompt)  # type: ignore[return-value]

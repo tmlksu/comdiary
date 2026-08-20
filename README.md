@@ -48,17 +48,42 @@ comdiary --help
 
 リポジトリを持ってきて開発する場合は `uv sync --all-extras` → `uv run comdiary`。
 
-LLM バックエンドは GitHub Copilot CLI を既定にしています。
+### LLM バックエンド
+
+既定は GitHub Copilot CLI です。定額契約があるならこれが一番安く済みます。
 
 ```bash
 npm install -g @github/copilot
 comdiary doctor            # 設定・依存・台帳の点検
-comdiary doctor --probe    # モデル名まで実地確認 (Copilot を1回呼びます)
+comdiary doctor --probe    # モデル名まで実地確認 (LLM を1回呼びます)
 ```
 
 `[llm] model` に指定したモデル名が使えるかは実際に呼ぶまで分かりません
 (Copilot CLI は未知のモデル名でも終了コード 0 で失敗します)。`--probe` はそこを見ます。
 既定の `auto` なら Copilot が選びます。
+
+Gemini API (Google AI Studio) も使えます。API キーは設定ファイルではなく環境変数に置き、
+設定には**変数名だけ**を書きます。
+
+```bash
+export GEMINI_API_KEY=...
+comdiary run --llm gemini
+```
+
+```toml
+[llm]
+backend = "gemini"
+model   = "gemini-2.5-flash"
+
+[llm.gemini]
+api_key_env = "GEMINI_API_KEY"
+```
+
+従量課金なので、コストは呼び出し回数ではなく**送ったトークン数**で決まります。
+1会議あたり「1 (分割) + セグメント数 (抽出)」回の呼び出しが同じ議事録全文を必要とするため、
+Gemini バックエンドは既定で議事録を1回だけアップロードして使い回し
+(context caching)、JSON Schema はプロンプトに書かず `responseSchema` で直接渡します
+(→ [docs/operations.md](docs/operations.md#llm-バックエンドを差し替える))。
 
 ## セットアップ
 

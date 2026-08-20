@@ -227,6 +227,10 @@ class Pipeline:
         except Exception as exc:  # noqa: BLE001 - the run must survive one bad file
             outcome.error = f"{type(exc).__name__}: {exc}\n{traceback.format_exc(limit=3)}"
             return outcome
+        finally:
+            # Nothing past this point needs the transcript, and a backend that
+            # cached it upstream is billed for as long as it keeps it.
+            self.llm.release_context()
 
         slug = self.paths.meeting_slug(meeting.date, meeting.title, meeting.meeting_id)
         outcome.slug = slug
@@ -262,7 +266,7 @@ class Pipeline:
             )
 
         split: SplitResponse = self.llm.complete_json(
-            split_prompt(doc.text, self.registry, stats, hint), SplitResponse
+            split_prompt(self.registry, stats, hint), SplitResponse, context=doc.text
         )
         outcome.llm_calls += 1
 
@@ -319,7 +323,6 @@ class Pipeline:
         project = self.registry.project(seg.project_id) if seg.project_id else None
         detail: DetailResponse = self.llm.complete_json(
             detail_prompt(
-                doc.text,
                 seg.title,
                 seg.span,
                 project.name if project else None,
@@ -328,6 +331,7 @@ class Pipeline:
                 known_topics,
             ),
             DetailResponse,
+            context=doc.text,
         )
         outcome.llm_calls += 1
         if detail.summary:

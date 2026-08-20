@@ -8,6 +8,12 @@ Two passes:
 * **detail** — deep extraction for one segment at a time. Narrower context
   produces markedly better decisions/actions/signals than asking for everything
   about everything in one shot.
+
+Neither builder embeds the transcript. It is handed to the backend separately as
+``context``, because a document needs the same transcript for one split call and
+one detail call per segment — a backend that can cache it then uploads it once
+instead of once per call. Backends that cannot simply concatenate the two
+(`llm.backend.compose_prompt`), which reproduces the wording exactly.
 """
 
 from __future__ import annotations
@@ -77,7 +83,7 @@ def _context_block(registry: Registry) -> str:
     return "\n\n".join(parts)
 
 
-def split_prompt(text: str, registry: Registry, stats: SpeakerStats, hint: str = "") -> str:
+def split_prompt(registry: Registry, stats: SpeakerStats, hint: str = "") -> str:
     return f"""\
 あなたは社内の議事録を構造化する専門アシスタントです。
 以下の議事録を読み、(1)会議のメタ情報 と (2)話題ごとのセグメント分割 を出力してください。
@@ -104,13 +110,7 @@ title・summary・span・guess・speakers に集中してください。
 {_context_block(registry)}
 
 {_mic_guide(stats)}
-{hint}
-
-## 議事録
-<transcript>
-{text}
-</transcript>
-"""
+{hint}"""
 
 
 TOPIC_GUIDE = """\
@@ -139,7 +139,6 @@ def _known_topics_block(known_topics: list[str]) -> str:
 
 
 def detail_prompt(
-    text: str,
     segment_title: str,
     segment_span: str,
     project_name: str | None,
@@ -177,10 +176,4 @@ def detail_prompt(
 {_mic_guide(stats)}
 
 ## 参考: 登録済みの人物
-{registry.people_digest()}
-
-## 議事録
-<transcript>
-{text}
-</transcript>
-"""
+{registry.people_digest()}"""

@@ -179,9 +179,9 @@ rsync -a --delete ~/.comdiary/ledger/ /mnt/backup/ledger/
 
 ```toml
 [llm]
-backend = "copilot"     # copilot | fake | none
+backend = "copilot"     # copilot | gemini | fake | none
 model   = "auto"          # 使えるモデル名は doctor --probe で確認
-command = "copilot"
+command = "copilot"       # backend = "copilot" のときだけ使われます
 extra_args = []          # Copilot CLI の版に応じて調整
 timeout = 300
 retries = 2
@@ -189,3 +189,40 @@ retries = 2
 
 `fake` はオフラインの決定論バックエンドで、見出しで機械的に分割するだけです。
 パイプラインの配線確認や、LLM を呼ばずに台帳の形を確かめたいときに使えます。
+
+### Gemini API (従量課金)
+
+```toml
+[llm]
+backend = "gemini"
+model   = "gemini-2.5-flash"   # "auto" のままでもこの既定に解決されます
+
+[llm.gemini]
+api_key_env = "GEMINI_API_KEY"   # 変数名。キーそのものは書かないこと
+max_output_tokens = 8192
+# thinking_budget = 0            # 抽出は機械的な作業なので絞れます
+cache = true
+cache_ttl_seconds = 600
+cache_min_chars = 2000
+```
+
+`comdiary doctor` は環境変数が入っているかまでを見ます。キーが**実際に通るか**は
+`--probe` を付けたときだけで、これは本物の呼び出しなので課金されます。
+
+**コスト構造を先に把握してください。** 1つの会議は「1回の分割 + セグメント数ぶんの抽出」で
+処理され、そのすべてが議事録全文を必要とします。素朴に実装すると全文を
+セグメント数+1 回ぶん課金されます。そのため既定で2つ効かせています。
+
+- **context caching** — 議事録を1回だけアップロードし、以降の呼び出しはそれを参照します。
+  文書の処理が終わった時点でキャッシュは削除します (生きている間ずっと課金されるため)。
+  `cache_min_chars` を下回る短い議事録は、モデルの最小キャッシュサイズに届かないので
+  そのまま送ります。キャッシュ作成に失敗しても取り込みは続行します
+- **`responseSchema`** — スキーマを制約デコードとして渡すので、数 kB の JSON Schema を
+  毎回プロンプトに載せる必要がなく、スキーマ検証の再試行もほぼ起きません
+
+`gemini` は Google AI Studio の API キー方式です。Vertex AI (GCP プロジェクトの
+サービスアカウント認証) には対応していません。
+
+切り替えても過去分はそのまま使えます。`comdiary rerender` は LLM を呼びませんし、
+各会議の `meetings/*.json` には使ったバックエンドとモデルが記録されているので、
+どの記録がどのモデル由来かは後から追えます。

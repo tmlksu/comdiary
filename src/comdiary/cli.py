@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import shutil
 import sys
+from contextlib import closing
 from pathlib import Path
 from typing import Annotated
 
@@ -29,7 +30,7 @@ from .ingest.state import State
 from .ledger import git as gitops
 from .ledger.paths import SECTIONS, LedgerPaths
 from .ledger.writer import LedgerWriter, scaffold
-from .llm.backend import build_backend
+from .llm.backend import LLMError, build_backend
 from .lock import LockBusy, file_lock
 from .models import Meeting, Project
 from .registry.store import Registry
@@ -162,9 +163,13 @@ def doctor(
     probe_llm: Annotated[
         bool, typer.Option("--probe", help="LLM を1回呼んでモデル名まで確認する")
     ] = False,
+    llm: Annotated[
+        str | None,
+        typer.Option("--llm", help="backend を一時的に上書き (設定を書き換える前の下見に)"),
+    ] = None,
 ) -> None:
     """設定・依存・台帳の健全性を点検する。"""
-    cfg = Ctx.load(config)
+    cfg = Ctx.load(config, llm)
     paths = LedgerPaths(cfg.ledger)
     ok = True
 
@@ -191,26 +196,29 @@ def doctor(
     if cfg.ingest.done:
         check("完了先 (done)", True, str(cfg.ingest.done))
 
-    if cfg.llm.backend == "copilot":
-        found = shutil.which(cfg.llm.command)
-        check(
-            f"LLM コマンド '{cfg.llm.command}'",
-            found is not None,
-            found or "npm install -g @github/copilot で導入してください",
-        )
-        if found and probe_llm:
-            # A wrong --model name fails at call time with a zero exit code, so
-            # the only honest check is one real round trip.
-            backend = build_backend(cfg.llm)
-            good, detail = backend.probe()  # type: ignore[union-attr]
+    # What "configured correctly" means differs per backend — a CLI needs its
+    # binary on PATH, an API needs a key in the environment — so each backend
+    # answers for itself rather than doctor knowing them all.
+    try:
+        backend = build_backend(cfg.llm)
+    except LLMError as exc:
+        backend = None
+        check(f"LLM バックエンド '{cfg.llm.backend}'", False, str(exc))
+    if backend is not None:
+        ready, detail = backend.preflight()
+        check(f"LLM バックエンド '{backend.name}'", ready, detail)
+        if ready and probe_llm:
+            # Copilot reports a wrong --model name with a zero exit code, and an
+            # API key is only really valid once it has been accepted, so the only
+            # honest check is one real round trip.
+            good, detail = backend.probe()
             check(f"LLM 応答 (model={cfg.llm.model or 'auto'})", good, detail)
-        elif found:
+        elif ready and backend.name not in ("none", "fake"):
             console.print(
                 "[dim]     モデル名の実地確認は --probe を付けると行います"
-                " (Copilot を1回呼びます)[/dim]"
+                " (LLM を実際に1回呼ぶため、従量課金のバックエンドでは課金されます)[/dim]"
             )
-    else:
-        check(f"LLM バックエンド '{cfg.llm.backend}'", True)
+        backend.close()
 
     check("git", shutil.which("git") is not None)
     if gitops.is_repo(paths.root):
@@ -381,7 +389,9 @@ def _print_outcome(outcome: IngestOutcome) -> None:
 def ingest_run(
     limit: Annotated[int | None, typer.Option("--limit", "-n", help="1回で処理する最大件数")] = None,
     dry_run: Annotated[bool, typer.Option("--dry-run", help="書き込まずに結果だけ表示")] = False,
-    llm: Annotated[str | None, typer.Option("--llm", help="backend を一時的に上書き (fake 等)")] = None,
+    llm: Annotated[
+        str | None, typer.Option("--llm", help="backend を一時的に上書き (gemini / fake 等)")
+    ] = None,
     commit: Annotated[bool, typer.Option(help="台帳を git コミットする")] = True,
     config: ConfigOpt = None,
 ) -> None:
@@ -393,8 +403,8 @@ def ingest_run(
 
     try:
         with file_lock(paths.internal / "ingest.lock"):
-            with State(paths.state_db) as state:
-                pipeline = Pipeline(cfg, build_backend(cfg.llm), state, dry_run=dry_run)
+            with State(paths.state_db) as state, closing(build_backend(cfg.llm)) as backend:
+                pipeline = Pipeline(cfg, backend, state, dry_run=dry_run)
                 report = pipeline.run(limit)
             _print_report(report)
             if commit and not dry_run and report.processed and cfg.git.enabled:
@@ -446,8 +456,8 @@ def ingest_add(
     if not docs:
         _fail("取り込める文書がありませんでした")
 
-    with State(paths.state_db) as state:
-        pipeline = Pipeline(cfg, build_backend(cfg.llm), state, dry_run=dry_run)
+    with State(paths.state_db) as state, closing(build_backend(cfg.llm)) as backend:
+        pipeline = Pipeline(cfg, backend, state, dry_run=dry_run)
         processed = 0
         for doc in docs:
             outcome = pipeline.ingest_doc(doc, project_hint=project)

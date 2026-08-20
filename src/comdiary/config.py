@@ -56,13 +56,42 @@ class IngestConfig(BaseModel):
     quiet_seconds: int = 60
 
 
+class GeminiConfig(BaseModel):
+    """Settings that only mean anything to the Gemini backend.
+
+    Kept in its own table because ``command``/``extra_args`` are meaningless to
+    an HTTP backend and these are meaningless to a CLI one; flattening them into
+    ``[llm]`` would leave half the keys lying about what they affect.
+    """
+
+    #: The *name* of the environment variable holding the key — never the key.
+    #: A config file gets copied between machines and into version control; an
+    #: API key must not travel with it.
+    api_key_env: str = "GEMINI_API_KEY"
+    base_url: str = "https://generativelanguage.googleapis.com/v1beta"
+    max_output_tokens: int = 8192
+    temperature: float | None = None
+    #: 0 disables the model's thinking budget entirely; None leaves it to the
+    #: model. Extraction is largely mechanical, so low budgets work well here.
+    thinking_budget: int | None = None
+    #: Upload the transcript once per document instead of with every call. One
+    #: meeting costs 1 + len(segments) calls that all need the same transcript.
+    cache: bool = True
+    cache_ttl_seconds: int = 600
+    #: Below the model's minimum cacheable size the create call only fails, so
+    #: short transcripts skip it and are sent inline.
+    cache_min_chars: int = 2000
+
+
 class LLMConfig(BaseModel):
-    backend: str = "copilot"  # copilot | fake | none
+    backend: str = "copilot"  # copilot | gemini | fake | none
+    #: "auto" lets Copilot choose; the Gemini backend reads it as "use my default".
     model: str = "auto"
     command: str = "copilot"
     extra_args: list[str] = Field(default_factory=list)
     timeout: int = 300
     retries: int = 2
+    gemini: GeminiConfig = Field(default_factory=GeminiConfig)
 
 
 class MatchConfig(BaseModel):
@@ -236,12 +265,32 @@ glob  = "*.md"
 quiet_seconds = 60
 
 [llm]
-backend = "copilot"      # copilot | fake | none
+backend = "copilot"      # copilot | gemini | fake | none
 model   = "auto"         # 使えるモデル名は `comdiary doctor --probe` で確認
-command = "copilot"
+command = "copilot"      # backend = "copilot" のときだけ使われます
 extra_args = []
 timeout = 300
 retries = 2
+
+# backend = "gemini" のときだけ使われます (Google AI Studio の API キー方式)。
+# 従量課金なので、まず `comdiary run --dry-run` と `--llm fake` で配線を確かめてから
+# 実キーに切り替えるのが安全です。
+[llm.gemini]
+# API キーは**ここに書かず**、環境変数に置いてその変数名だけを指定します。
+# 設定ファイルはマシン間でコピーされるものなので、キーを載せると一緒に漏れます。
+api_key_env = "GEMINI_API_KEY"
+base_url = "https://generativelanguage.googleapis.com/v1beta"
+max_output_tokens = 8192
+# temperature = 0.2
+# 抽出は機械的な作業なので thinking は絞って構いません (0 で無効)。
+# thinking_budget = 0
+
+# 議事録を1回だけアップロードし、セグメントごとの抽出で使い回します。
+# 1会議あたり「1 + セグメント数」回の呼び出しが同じ全文を必要とするため、
+# ここが従量課金でいちばん効くつまみです。
+cache = true
+cache_ttl_seconds = 600
+cache_min_chars = 2000
 
 [match]
 # LLM の案件推定はこの確信度以上でのみ採用。下回ると _inbox に落ちます。

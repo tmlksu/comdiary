@@ -154,7 +154,7 @@ class TestVocabularyConvergence:
         from comdiary.registry.store import Registry
 
         prompt = detail_prompt(
-            "本文", "話題", "", None, Registry.load(ledger), SpeakerStats(),
+            "話題", "", None, Registry.load(ledger), SpeakerStats(),
             known_topics=["納期", "外注費"],
         )
         assert "既出の論点" in prompt
